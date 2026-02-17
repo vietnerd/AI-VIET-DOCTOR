@@ -1,0 +1,100 @@
+import streamlit as st
+import google.generativeai as genai
+from gtts import gTTS
+import os
+import re
+import time
+
+# --- CẤU HÌNH ---
+# THAY API KEY CỦA BẠN VÀO ĐÂY
+os.environ["GOOGLE_API_KEY"] = "gen-lang-client-0132750261"
+genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+
+# --- CẤU HÌNH TRANG (MOBILE VIEW) ---
+st.set_page_config(page_title="AI Doctor", page_icon="🏥", layout="centered")
+
+# CSS để giao diện giống App điện thoại
+st.markdown("""
+<style>
+    .stChatMessage {border-radius: 15px; padding: 10px;}
+    .stTextInput {position: fixed; bottom: 0; width: 100%; z-index: 1000; background: white;}
+    .action-box {background-color: #222; color: #00ff00; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; margin-top: 5px;}
+</style>
+""", unsafe_allow_html=True)
+
+# --- LOGIC AI ---
+SYSTEM_PROMPT = """
+You are "AI Doctor Assistant" for Vietnamese doctors.
+Reply briefly (1-2 sentences). Friendly Southern accent.
+Format: "{Spoken text}" [ACTION: TAG]
+Rules:
+- Booking -> [ACTION: OPEN_CALENDAR]
+- Prescription -> [ACTION: DRAFT_RX: drug_name]
+- Payment -> [ACTION: TRIGGER_NFC]
+- Security -> [ACTION: REQUIRE_2FA]
+"""
+model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
+
+# --- KHỞI TẠO SESSION ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    st.session_state.chat_session = model.start_chat(history=[])
+
+# --- GIAO DIỆN CHÍNH ---
+st.title("🏥 AI Doctor Assistant")
+st.caption("Voice-First Interface Simulator")
+
+# Hiển thị lịch sử chat
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        if "action" in message and message["action"]:
+             st.markdown(f"<div class='action-box'>🖥️ LINUX: {message['action']}</div>", unsafe_allow_html=True)
+
+# --- INPUT TỪ ĐIỆN THOẠI ---
+# (Dùng Text Input để giả lập giọng nói cho ổn định trên mobile web)
+user_input = st.chat_input("Bác sĩ nói gì đi (hoặc nhập lệnh)...")
+
+if user_input:
+    # 1. Hiển thị tin nhắn người dùng
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+    # 2. Gửi đến AI
+    response = st.session_state.chat_session.send_message(user_input)
+    full_text = response.text
+
+    # 3. Tách Action và Lời nói
+    action_match = re.search(r'\[ACTION:.*?\]', full_text)
+    if action_match:
+        action_tag = action_match.group(0)
+        spoken_text = full_text.replace(action_tag, "").strip()
+    else:
+        action_tag = None
+        spoken_text = full_text.strip()
+
+    # 4. Hiển thị phản hồi AI
+    with st.chat_message("assistant"):
+        st.markdown(spoken_text)
+        if action_tag:
+            st.markdown(f"<div class='action-box'>⚡ SYSTEM EXECUTE: {action_tag}</div>", unsafe_allow_html=True)
+            
+            # Mô phỏng hiệu ứng UI thay đổi
+            if "OPEN_CALENDAR" in action_tag:
+                st.info("📅 Đã mở ứng dụng Lịch (Calendar View)")
+            elif "DRAFT_RX" in action_tag:
+                st.warning("💊 Đã mở đơn thuốc nháp (Prescription UI)")
+            elif "TRIGGER_NFC" in action_tag:
+                st.success("💳 Đã bật đầu đọc thẻ NFC (Ready to Pay)")
+            elif "REQUIRE_2FA" in action_tag:
+                st.error("🔒 CẢNH BÁO: Yêu cầu xác thực vân tay!")
+
+    # 5. Lưu vào lịch sử
+    st.session_state.messages.append({"role": "assistant", "content": spoken_text, "action": action_tag})
+    
+    # 6. Phát âm thanh (TTS)
+    # Lưu ý: Trên Mobile Web, autoplay audio bị hạn chế bởi trình duyệt, nên ta hiện Audio Player
+    tts = gTTS(spoken_text, lang='vi')
+    tts.save("audio.mp3")
+    st.audio("audio.mp3", format="audio/mp3", autoplay=True)

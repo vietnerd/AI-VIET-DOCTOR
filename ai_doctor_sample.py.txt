@@ -1,100 +1,134 @@
-import streamlit as st
-import google.generativeai as genai
-from gtts import gTTS
 import os
-import re
 import time
+import sys
+import re
+import google.generativeai as genai
+from colorama import Fore, Back, Style, init
 
-# --- CẤU HÌNH ---
-# THAY API KEY CỦA BẠN VÀO ĐÂY
-os.environ["GOOGLE_API_KEY"] = "gen-lang-client-0132750261"
-genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+# --- CẤU HÌNH (SETUP) ---
+# THAY API KEY CỦA BẠN VÀO DÒNG DƯỚI ĐÂY
+API_KEY = "gen-lang-client-0939932636" 
 
-# --- CẤU HÌNH TRANG (MOBILE VIEW) ---
-st.set_page_config(page_title="AI Doctor", page_icon="🏥", layout="centered")
+if API_KEY == "YOUR_API_KEY_HERE":
+    print(f"{Fore.RED}LỖI: Bác chưa điền Google API Key vào code!{Style.RESET_ALL}")
+    sys.exit()
 
-# CSS để giao diện giống App điện thoại
-st.markdown("""
-<style>
-    .stChatMessage {border-radius: 15px; padding: 10px;}
-    .stTextInput {position: fixed; bottom: 0; width: 100%; z-index: 1000; background: white;}
-    .action-box {background-color: #222; color: #00ff00; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; margin-top: 5px;}
-</style>
-""", unsafe_allow_html=True)
+genai.configure(api_key=API_KEY)
+init(autoreset=True)
 
-# --- LOGIC AI ---
+# --- BỘ NÃO AI (SYSTEM PROMPT) ---
 SYSTEM_PROMPT = """
-You are "AI Doctor Assistant" for Vietnamese doctors.
-Reply briefly (1-2 sentences). Friendly Southern accent.
-Format: "{Spoken text}" [ACTION: TAG]
-Rules:
+[ROLE]
+You are the AI Voice Interface for a Medical AIO Linux System (Vietnamese Doctors in US).
+Input: Voice Transcript (text).
+Output Format: 
+"{Vietnamese Spoken Response}"
+[ACTION: TAG_NAME]
+
+[RULES]
+1. Be brief (1-2 sentences). 
+2. Tone: Professional, Friendly, Southern Accent (Dạ, Con, Thưa).
+3. SAFETY: If "Controlled Substances" (Oxy, Xanax, Opioids) -> [ACTION: TRIGGER_SECURITY_2FA].
+
+[COMMANDS]
 - Booking -> [ACTION: OPEN_CALENDAR]
-- Prescription -> [ACTION: DRAFT_RX: drug_name]
-- Payment -> [ACTION: TRIGGER_NFC]
-- Security -> [ACTION: REQUIRE_2FA]
+- Prescription -> [ACTION: DRAFT_RX: {drug_name}]
+- Payment -> [ACTION: TRIGGER_PAYMENT_NFC]
+- Check Insurance -> [ACTION: CHECK_INSURANCE]
 """
+
 model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
+chat_session = model.start_chat(history=[])
 
-# --- KHỞI TẠO SESSION ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-    st.session_state.chat_session = model.start_chat(history=[])
+# --- GIAO DIỆN GIẢ LẬP (MOCK UI) ---
+def print_header():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f"{Back.GREEN}{Fore.BLACK} ========================================================= {Style.RESET_ALL}")
+    print(f"{Back.GREEN}{Fore.BLACK}   🏥 AI DOCTOR OFFICE ASSISTANT (LINUX AIO SIMULATOR)     {Style.RESET_ALL}")
+    print(f"{Back.GREEN}{Fore.BLACK}   STATUS: ONLINE | VOICE: LISTENING | SYSTEM: READY       {Style.RESET_ALL}")
+    print(f"{Back.GREEN}{Fore.BLACK} ========================================================= {Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN}[HƯỚNG DẪN]: Gõ nội dung bác sĩ muốn nói (Ví dụ: 'Đặt lịch', 'Kê đơn')...")
+    print("-" * 60)
 
-# --- GIAO DIỆN CHÍNH ---
-st.title("🏥 AI Doctor Assistant")
-st.caption("Voice-First Interface Simulator")
+def simulate_processing():
+    """Hiệu ứng AI đang suy nghĩ"""
+    sys.stdout.write(f"{Fore.YELLOW}⚡ AI Processing")
+    for _ in range(3):
+        time.sleep(0.3)
+        sys.stdout.write(".")
+        sys.stdout.flush()
+    print(f"{Style.RESET_ALL}")
 
-# Hiển thị lịch sử chat
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        if "action" in message and message["action"]:
-             st.markdown(f"<div class='action-box'>🖥️ LINUX: {message['action']}</div>", unsafe_allow_html=True)
-
-# --- INPUT TỪ ĐIỆN THOẠI ---
-# (Dùng Text Input để giả lập giọng nói cho ổn định trên mobile web)
-user_input = st.chat_input("Bác sĩ nói gì đi (hoặc nhập lệnh)...")
-
-if user_input:
-    # 1. Hiển thị tin nhắn người dùng
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-    # 2. Gửi đến AI
-    response = st.session_state.chat_session.send_message(user_input)
-    full_text = response.text
-
-    # 3. Tách Action và Lời nói
-    action_match = re.search(r'\[ACTION:.*?\]', full_text)
-    if action_match:
-        action_tag = action_match.group(0)
-        spoken_text = full_text.replace(action_tag, "").strip()
-    else:
-        action_tag = None
-        spoken_text = full_text.strip()
-
-    # 4. Hiển thị phản hồi AI
-    with st.chat_message("assistant"):
-        st.markdown(spoken_text)
-        if action_tag:
-            st.markdown(f"<div class='action-box'>⚡ SYSTEM EXECUTE: {action_tag}</div>", unsafe_allow_html=True)
-            
-            # Mô phỏng hiệu ứng UI thay đổi
-            if "OPEN_CALENDAR" in action_tag:
-                st.info("📅 Đã mở ứng dụng Lịch (Calendar View)")
-            elif "DRAFT_RX" in action_tag:
-                st.warning("💊 Đã mở đơn thuốc nháp (Prescription UI)")
-            elif "TRIGGER_NFC" in action_tag:
-                st.success("💳 Đã bật đầu đọc thẻ NFC (Ready to Pay)")
-            elif "REQUIRE_2FA" in action_tag:
-                st.error("🔒 CẢNH BÁO: Yêu cầu xác thực vân tay!")
-
-    # 5. Lưu vào lịch sử
-    st.session_state.messages.append({"role": "assistant", "content": spoken_text, "action": action_tag})
+def execute_linux_action(tag):
+    """Mô phỏng việc thực thi lệnh xuống phần cứng Linux"""
+    print(f"\n{Back.RED}{Fore.WHITE} >>> [LINUX KERNEL] EXECUTING ACTION... {Style.RESET_ALL}")
+    time.sleep(0.5)
     
-    # 6. Phát âm thanh (TTS)
-    # Lưu ý: Trên Mobile Web, autoplay audio bị hạn chế bởi trình duyệt, nên ta hiện Audio Player
-    tts = gTTS(spoken_text, lang='vi')
-    tts.save("audio.mp3")
-    st.audio("audio.mp3", format="audio/mp3", autoplay=True)
+    if "OPEN_CALENDAR" in tag:
+        print(f"{Fore.RED} 🖥️  OPENING APP: GNOME-CALENDAR (Week View)")
+        print(f"{Fore.RED} 📅  DISPLAY: Showing available slots for Dr. Hung.")
+        
+    elif "DRAFT_RX" in tag:
+        drug = tag.split(":")[-1].replace("]", "").strip()
+        print(f"{Fore.RED} 💊  API CALL: RxNorm Database -> Searching '{drug}'")
+        print(f"{Fore.RED} 📝  UI: Displaying Prescription Draft on Touch Screen.")
+        
+    elif "TRIGGER_PAYMENT_NFC" in tag:
+        print(f"{Fore.RED} 💳  HARDWARE: Waking up NFC Reader (/dev/ttyUSB0)")
+        print(f"{Fore.RED} 💲  STATUS: Waiting for Patient's Card...")
+        
+    elif "TRIGGER_SECURITY_2FA" in tag:
+        print(f"{Fore.RED} 🔒  SECURITY ALERT: CONTROLLED SUBSTANCE DETECTED!")
+        print(f"{Fore.RED} 🔑  UI: Locking Screen. Requiring Fingerprint/FaceID.")
+        
+    elif "CHECK_INSURANCE" in tag:
+        print(f"{Fore.RED} 🏥  API CALL: Checking Eligibility (BlueCross BlueShield)...")
+        print(f"{Fore.RED} ✅  RESULT: Approved. Co-pay: $20.00")
+        
+    else:
+        print(f"{Fore.RED} ⚙️  SYSTEM LOG: Action logged ({tag})")
+    print("-" * 60)
+
+# --- VÒNG LẶP CHÍNH (MAIN LOOP) ---
+def main():
+    print_header()
+    
+    while True:
+        try:
+            # 1. INPUT (Giả lập giọng nói)
+            user_input = input(f"\n{Fore.BLUE}🎤 DOCTOR (Voice): {Style.RESET_ALL}")
+            
+            if user_input.lower() in ["exit", "quit", "tắt máy"]:
+                print(f"\n{Fore.MAGENTA}🤖 AI: Dạ, chào tạm biệt bác sĩ.{Style.RESET_ALL}")
+                break
+            
+            if not user_input.strip(): continue
+
+            # 2. PROCESSING
+            simulate_processing()
+            response = chat_session.send_message(user_input)
+            full_text = response.text
+
+            # 3. PARSING & OUTPUT
+            # Tách phần nói và phần lệnh
+            action_match = re.search(r'\[ACTION:.*?\]', full_text)
+            
+            if action_match:
+                action_tag = action_match.group(0)
+                spoken_text = full_text.replace(action_tag, "").strip()
+            else:
+                action_tag = None
+                spoken_text = full_text.strip()
+
+            # Hiển thị AI nói
+            print(f"{Fore.MAGENTA}🤖 AI (Speaker): {Style.BRIGHT}{spoken_text}{Style.RESET_ALL}")
+            
+            # Thực thi lệnh Linux
+            if action_tag:
+                execute_linux_action(action_tag)
+                
+        except Exception as e:
+            print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+
+if __name__ == "__main__":
+    main()
